@@ -1,0 +1,64 @@
+# ESP-IDF build output
+build/
+sdkconfig.old
+*.bin
+*.elf
+*.map
+
+# Python bytecode and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+ENV/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Managed components (can be regenerated)
+managed_components/
+dependencies.lock
+
+# Certificates and secrets (NEVER commit these!)
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+credentials.txt
+secrets.h
+wifi_config.h
+
+# ESP-IDF specific
+sdkconfig
+!sdkconfig.defaults
+
+# Log files
+*.log
+
+# Backup files
+*.bak
+*.orig
+
+# Claude Code session data
+.claude/
+
+# OS generated files
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Temporary files
+*.tmp
+*.temp
+
+# Core dumps
+core
+core.*

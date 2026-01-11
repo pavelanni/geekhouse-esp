@@ -1,0 +1,33 @@
+# Handle line endings automatically
+* text=auto
+
+# C/C++ sources
+*.c text
+*.h text
+*.cpp text
+*.hpp text
+
+# CMake files
+CMakeLists.txt text
+*.cmake text
+
+# Markdown documentation
+*.md text
+
+# Python scripts
+*.py text
+
+# Shell scripts (always use LF)
+*.sh text eol=lf
+
+# Binary files
+*.bin binary
+*.elf binary
+*.o binary
+*.a binary
+
+# Images
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
