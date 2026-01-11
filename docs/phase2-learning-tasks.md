@@ -9,15 +9,19 @@ This document contains hands-on learning tasks to deepen your understanding of F
 ## Task 1: Task Statistics Monitor (Easy - 20 mins)
 
 ### Learning Goal
+
 Understand FreeRTOS task monitoring and runtime statistics. Learn how to track task behavior, CPU usage, and stack consumption.
 
 ### What to Build
+
 Create a monitoring task that periodically prints statistics about all running tasks:
+
 - Task names and their current states (Running, Blocked, Ready, Suspended)
 - Stack high water mark (minimum free stack space ever reached)
 - CPU usage percentage per task
 
 ### Why This Matters
+
 - **Debugging**: See which tasks are consuming CPU
 - **Optimization**: Identify over-allocated stack sizes
 - **Profiling**: Find performance bottlenecks
@@ -32,6 +36,7 @@ idf.py menuconfig
 ```
 
 Navigate through:
+
 1. `Component config` → `FreeRTOS` → `Kernel`
 2. Enable these options:
    - `configUSE_TRACE_FACILITY` - Enables task state tracking
@@ -192,7 +197,7 @@ idf.py flash monitor
 
 Every 10 seconds you should see:
 
-```
+```none
 I (10234) STATS_TASK:
 I (10234) STATS_TASK: ========== TASK STATISTICS ==========
 I (10234) STATS_TASK:
@@ -241,6 +246,7 @@ I (10234) STATS_TASK: Minimum free heap (since boot): 243104 bytes
 ### Extension Ideas
 
 Once working, try:
+
 - Add heap usage per task (requires `configUSE_TRACE_FACILITY`)
 - Graph CPU usage over time
 - Set thresholds and alert when stack/heap is low
@@ -251,12 +257,15 @@ Once working, try:
 ## Task 2: Software Timer for LED Blinking (Medium - 30 mins)
 
 ### Learning Goal
+
 Use FreeRTOS software timers instead of dedicated tasks. Learn when timers are more appropriate than tasks.
 
 ### What to Build
+
 Replace the `led_task` with a software timer callback. The LED blinking behavior stays the same, but implemented more efficiently.
 
 ### Why This Matters
+
 - **Memory Efficiency**: Timers don't need their own stack (saves 2KB+ per timer)
 - **Resource Sharing**: Multiple timers share one timer daemon task
 - **Cleaner Code**: No need for infinite loops with vTaskDelay()
@@ -265,12 +274,14 @@ Replace the `led_task` with a software timer callback. The LED blinking behavior
 ### When to Use Timers vs Tasks
 
 **Use Software Timers when:**
+
 - Operation is simple and quick (< 10ms)
 - No blocking operations needed
 - Periodic or one-shot execution
 - Examples: LED blinking, polling, timeouts
 
 **Use Tasks when:**
+
 - Operation needs to block (queues, mutexes, delays)
 - Operation takes significant time
 - Need separate priority control
@@ -382,6 +393,7 @@ idf.py flash monitor
 ### Expected Result
 
 LEDs should blink exactly as before, but now you'll see in task statistics:
+
 - No "led" task listed
 - Timer daemon task (`Tmr Svc`) handling the LED callback
 - ~2KB less RAM usage (no LED task stack)
@@ -414,6 +426,7 @@ LEDs should blink exactly as before, but now you'll see in task statistics:
 ### Extension Ideas
 
 Once working, try:
+
 - Create multiple timers with different periods
 - Make one timer one-shot for a delayed startup
 - Change timer period dynamically based on sensor readings
@@ -424,12 +437,15 @@ Once working, try:
 ## Task 3: Event Groups for Sensor Synchronization (Medium-Hard - 45 mins)
 
 ### Learning Goal
+
 Use event groups to wait for multiple conditions. Learn to coordinate tasks that depend on multiple events.
 
 ### What to Build
+
 Create a "reporter" task that waits for BOTH sensors to have fresh readings, then calculates and reports summary statistics (min, max, average over last 10 readings).
 
 ### Why This Matters
+
 - **Coordination**: Wait for multiple conditions before proceeding
 - **Synchronization**: Ensure data consistency across tasks
 - **Real-World Use**: Common pattern for startup sequences, multi-sensor fusion, state machines
@@ -438,6 +454,7 @@ Create a "reporter" task that waits for BOTH sensors to have fresh readings, the
 ### Event Groups Explained
 
 **Event Groups** are a set of binary flags (bits) that tasks can:
+
 - **Set**: Mark an event as having occurred
 - **Clear**: Mark an event as not occurred
 - **Wait**: Block until one or more events occur
@@ -445,6 +462,7 @@ Create a "reporter" task that waits for BOTH sensors to have fresh readings, the
 Think of them as a set of 24 light switches (bits 0-23) that tasks can flip and watch.
 
 **Wait Modes**:
+
 - **OR**: Wake when ANY bit is set (`xWaitForAnyBits = pdFALSE`)
 - **AND**: Wake when ALL bits are set (`xWaitForAllBits = pdTRUE`)
 
@@ -780,7 +798,7 @@ idf.py flash monitor
 
 Every 20 seconds (10 readings × 2 seconds), you should see:
 
-```
+```none
 I (20000) REPORTER:
 I (20000) REPORTER: ===== Sensor Summary (last 10 readings) =====
 I (20000) REPORTER:   Light: min=2800, max=3100, avg=2950
@@ -791,6 +809,7 @@ I (20000) REPORTER: ==========================================
 ### Learning Points
 
 1. **Event Group Syntax**:
+
    ```c
    // Wait for ANY bit (OR logic):
    xEventGroupWaitBits(events, bits, pdTRUE, pdFALSE, timeout);
@@ -830,10 +849,13 @@ I (20000) REPORTER: ==========================================
 ## Task 4: Simple Console Command System (Hard - 60 mins)
 
 ### Learning Goal
+
 Implement interactive control using ESP-IDF console component. Learn command parsing, argument handling, and interactive debugging techniques.
 
 ### What to Build
+
 Add a console task that accepts typed commands via serial to control the system:
+
 - `led on <id>` - Turn LED on
 - `led off <id>` - Turn LED off
 - `sensor read <id>` - Force immediate sensor reading
@@ -841,6 +863,7 @@ Add a console task that accepts typed commands via serial to control the system:
 - `stats` - Print task statistics
 
 ### Why This Matters
+
 - **Interactive Debugging**: Control system without reflashing
 - **Production Testing**: Manufacturing test commands
 - **Development Speed**: Quickly test features without hardcoding
@@ -1168,7 +1191,7 @@ idf.py flash monitor
 
 ### Expected Interaction
 
-```
+```none
 geekhouse> help
 
 Available commands:
@@ -1245,12 +1268,15 @@ geekhouse>
 ## Task 5: Watchdog Integration (Medium-Hard - 45 mins)
 
 ### Learning Goal
+
 Add task watchdog to detect stuck tasks. Learn how to make systems robust and self-recovering.
 
 ### What to Build
+
 Enable FreeRTOS task watchdog and integrate it into all tasks. Intentionally create stuck task scenarios to see detection and recovery.
 
 ### Why This Matters
+
 - **Robustness**: Detect when tasks get stuck in infinite loops or deadlocks
 - **Production**: Essential for deployed devices that need to recover automatically
 - **Debugging**: Helps find bugs that cause tasks to hang
@@ -1261,11 +1287,13 @@ Enable FreeRTOS task watchdog and integrate it into all tasks. Intentionally cre
 **Watchdog Timer**: A hardware timer that resets the system if not "fed" periodically.
 
 **Task Watchdog**: FreeRTOS watchdog that monitors individual tasks:
+
 - Each task must "reset" (feed) the watchdog periodically
 - If a task doesn't reset within timeout, watchdog triggers
 - Can print task info, panic, or reset system
 
 **Types**:
+
 - **TWDT (Task Watchdog Timer)**: Monitors FreeRTOS tasks
 - **IWDT (Interrupt Watchdog Timer)**: Monitors interrupt handling
 - **MWDT (Main Watchdog Timer)**: Hardware watchdog for entire system
@@ -1279,6 +1307,7 @@ idf.py menuconfig
 ```
 
 Navigate to:
+
 1. `Component config` → `ESP System Settings` → `Task Watchdog`
 2. Enable: `Initialize Task Watchdog Timer on startup`
 3. Set `Task Watchdog timeout period (seconds)`: 10
@@ -1417,7 +1446,8 @@ idf.py flash monitor
 ### Normal Operation
 
 With watchdog enabled, you should see:
-```
+
+```none
 I (1234) SENSOR_TASK: Subscribed to task watchdog
 I (1234) DISPLAY_TASK: Subscribed to task watchdog
 I (1234) REPORTER: Subscribed to task watchdog
@@ -1429,14 +1459,16 @@ Tasks run normally, each resetting watchdog periodically.
 ### Testing Watchdog Trigger
 
 Type in console:
-```
+
+```none
 geekhouse> wdt-test
 WARNING: This will trigger the watchdog in 10 seconds!
 Entering infinite loop (not resetting watchdog)...
 ```
 
 After ~10 seconds:
-```
+
+```none
 E (12345) task_wdt: Task watchdog got triggered. The following tasks did not reset the watchdog in time:
 E (12345) task_wdt:  - console (CPU 0)
 E (12345) task_wdt: Tasks currently running:
@@ -1511,6 +1543,7 @@ Congratulations on completing Phase 2! You now have a solid understanding of:
 ### Ready for Phase 3?
 
 Once you've completed 2-3 of these tasks, you'll be ready to move to Phase 3:
+
 - WiFi connectivity
 - HTTP REST API with HATEOAS
 - JSON response generation with cJSON
