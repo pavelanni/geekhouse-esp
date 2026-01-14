@@ -1,18 +1,23 @@
 #include "actuators.h"
-#include "sensors.h"
-#include "sensor_task.h"
 #include "display_task.h"
-#include "led_task.h"
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+#include "led_task.h"
+#include "sensor_task.h"
+#include "sensors.h"
+#include "stats_task.h"
 
 static const char *TAG = "MAIN";
 
-void app_main(void)
-{
+// Task handles (non-static so other files can access them via extern)
+TaskHandle_t sensor_task_handle = NULL;
+TaskHandle_t display_task_handle = NULL;
+TaskHandle_t led_task_handle = NULL;
+TaskHandle_t stats_task_handle = NULL;
+
+void app_main(void) {
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "=== Geekhouse Phase 2: Multi-Task Architecture ===");
     ESP_LOGI(TAG, "");
@@ -46,13 +51,12 @@ void app_main(void)
     // Priority: 5 (medium) - important but not time-critical
     // Stack: 4KB - needs space for sensor driver calls and logging
     ESP_LOGI(TAG, "  Creating sensor_task (priority: 5, stack: 4KB)...");
-    ret = xTaskCreate(
-        sensor_task,        // Task function
-        "sensor",           // Task name (for debugging)
-        4096,               // Stack size in bytes
-        sensor_queue,       // Parameter (queue handle)
-        5,                  // Priority
-        NULL                // Task handle (don't need to store it)
+    ret = xTaskCreate(sensor_task,         // Task function
+                      "sensor",            // Task name (for debugging)
+                      2048,                // Stack size in bytes
+                      sensor_queue,        // Parameter (queue handle)
+                      5,                   // Priority
+                      &sensor_task_handle  // Task handle
     );
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create sensor task");
@@ -63,13 +67,12 @@ void app_main(void)
     // Priority: 4 (lower than sensor) - display is less important than collection
     // Stack: 3KB - moderate for logging
     ESP_LOGI(TAG, "  Creating display_task (priority: 4, stack: 3KB)...");
-    ret = xTaskCreate(
-        display_task,       // Task function
-        "display",          // Task name (for debugging)
-        3072,               // Stack size in bytes
-        sensor_queue,       // Parameter (same queue)
-        4,                  // Priority
-        NULL                // Task handle
+    ret = xTaskCreate(display_task,         // Task function
+                      "display",            // Task name (for debugging)
+                      2048,                 // Stack size in bytes
+                      sensor_queue,         // Parameter (same queue)
+                      4,                    // Priority
+                      &display_task_handle  // Task handle
     );
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create display task");
@@ -80,16 +83,28 @@ void app_main(void)
     // Priority: 3 (low) - just a visual indicator
     // Stack: 2KB - minimal (no complex operations)
     ESP_LOGI(TAG, "  Creating led_task (priority: 3, stack: 2KB)...");
-    ret = xTaskCreate(
-        led_task,           // Task function
-        "led",              // Task name (for debugging)
-        2048,               // Stack size in bytes
-        NULL,               // No parameters needed
-        3,                  // Priority
-        NULL                // Task handle
+    ret = xTaskCreate(led_task,         // Task function
+                      "led",            // Task name (for debugging)
+                      1536,             // Stack size in bytes
+                      NULL,             // No parameters needed
+                      3,                // Priority
+                      &led_task_handle  // Task handle
     );
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create LED task");
+        return;
+    }
+
+    ESP_LOGI(TAG, "  Creating stats_task (priority: 2, stack: 4KB)...");
+    ret = xTaskCreate(stats_task,         // Task function
+                      "stats",            // Task name
+                      2048,               // Stack size (needs space for buffers)
+                      NULL,               // No parameters
+                      2,                  // Priority (lower than all functional tasks)
+                      &stats_task_handle  // Task handle
+    );
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create stats task");
         return;
     }
 

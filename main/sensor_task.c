@@ -1,17 +1,17 @@
 #include "sensor_task.h"
-#include "sensors.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
+
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+#include "sensors.h"
 
 static const char *TAG = "SENSOR_TASK";
 
-void sensor_task(void *pvParameters)
-{
+void sensor_task(void *pvParameters) {
     // Cast parameter to queue handle
     // The queue was created in app_main() and passed to us
-    QueueHandle_t queue = (QueueHandle_t)pvParameters;
+    QueueHandle_t queue = (QueueHandle_t) pvParameters;
     sensor_reading_t reading;
 
     ESP_LOGI(TAG, "Sensor task started");

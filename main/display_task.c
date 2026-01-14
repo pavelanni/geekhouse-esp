@@ -1,17 +1,17 @@
 #include "display_task.h"
-#include "sensors.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
+
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+#include "sensors.h"
 
 static const char *TAG = "DISPLAY_TASK";
 
-void display_task(void *pvParameters)
-{
+void display_task(void *pvParameters) {
     // Cast parameter to queue handle
     // This is the same queue that sensor_task is pushing to
-    QueueHandle_t queue = (QueueHandle_t)pvParameters;
+    QueueHandle_t queue = (QueueHandle_t) pvParameters;
     sensor_reading_t reading;
 
     ESP_LOGI(TAG, "Display task started");
@@ -32,12 +32,8 @@ void display_task(void *pvParameters)
                 const char *type_name = (info->type == SENSOR_TYPE_LIGHT) ? "Light" : "Water";
 
                 // Print formatted reading with all information
-                ESP_LOGI(TAG, "%s sensor (%s): raw=%d, calibrated=%.2f %s, time=%lu ms",
-                         type_name,
-                         info->location,
-                         reading.raw_value,
-                         reading.calibrated_value,
-                         reading.unit,
+                ESP_LOGI(TAG, "%s sensor (%s): raw=%d, calibrated=%.2f %s, time=%lu ms", type_name,
+                         info->location, reading.raw_value, reading.calibrated_value, reading.unit,
                          reading.timestamp);
             } else {
                 // This shouldn't happen, but handle gracefully

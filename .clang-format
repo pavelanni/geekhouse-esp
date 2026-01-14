@@ -1,0 +1,27 @@
+BasedOnStyle: Google
+IndentWidth: 4
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: Empty
+BreakBeforeBraces: Attach
+SpaceAfterCStyleCast: true
+PointerAlignment: Right
+
+# Added after speaking with Gemini
+
+# This enforces your preference: always put braces around if/else/while/for
+# even if there is only one line of code.
+AllowShortBlocksOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# Ensures braces are added to single-line statements if they are missing
+# (Available in clang-format 14+)
+InsertBraces: true
+
+# Helps align macro-heavy embedded code
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveMacros: true
+
+# Standard C behavior for spaces
+SpaceBeforeParens: ControlStatements

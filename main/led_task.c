@@ -1,15 +1,15 @@
 #include "led_task.h"
+
 #include "actuators.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_log.h"
 
 static const char *TAG = "LED_TASK";
 
-void led_task(void *pvParameters)
-{
+void led_task(void *pvParameters) {
     // We don't use parameters for this task
-    (void)pvParameters;  // Silence unused parameter warning
+    (void) pvParameters;  // Silence unused parameter warning
 
     ESP_LOGI(TAG, "LED task started");
     ESP_LOGI(TAG, "Blinking LEDs alternately every 500ms...");

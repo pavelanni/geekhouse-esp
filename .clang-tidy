@@ -1,0 +1,13 @@
+---
+Checks: >
+  bugprone-*,
+  performance-*,
+  readability-*,
+  -readability-braces-around-statements,
+  cppcoreguidelines-init-variables,
+  google-readability-todo
+
+# This ensures clangd knows how to handle ESP-IDF's cross-compiler
+CheckOptions:
+  - key:             bugprone-argument-comment.StrictMode
+    value:           '1'

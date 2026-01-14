@@ -1,9 +1,11 @@
 #include "sensors.h"
+
+#include <math.h>
+
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include <math.h>
 
 static const char *TAG = "SENSORS";
 
@@ -16,25 +18,14 @@ static SemaphoreHandle_t sensor_mutex = NULL;
 // Static sensor info array
 // This stores configuration and metadata for each sensor
 static sensor_info_t sensors[SENSOR_COUNT] = {
-    [SENSOR_LIGHT_ROOF] = {
-        .type = SENSOR_TYPE_LIGHT,
-        .channel = ADC_CHANNEL_0,  // GPIO0
-        .location = "roof",
-        .calib = {
-            .type = CALIB_NONE,
-            .unit = "raw"
-        }
-    },
-    [SENSOR_WATER_ROOF] = {
-        .type = SENSOR_TYPE_WATER,
-        .channel = ADC_CHANNEL_1,  // GPIO1
-        .location = "roof",
-        .calib = {
-            .type = CALIB_NONE,
-            .unit = "raw"
-        }
-    }
-};
+    [SENSOR_LIGHT_ROOF] = {.type = SENSOR_TYPE_LIGHT,
+                           .channel = ADC_CHANNEL_0,  // GPIO0
+                           .location = "roof",
+                           .calib = {.type = CALIB_NONE, .unit = "raw"}},
+    [SENSOR_WATER_ROOF] = {.type = SENSOR_TYPE_WATER,
+                           .channel = ADC_CHANNEL_1,  // GPIO1
+                           .location = "roof",
+                           .calib = {.type = CALIB_NONE, .unit = "raw"}}};
 
 /**
  * Apply linear calibration: y = mx + b
@@ -43,8 +34,7 @@ static sensor_info_t sensors[SENSOR_COUNT] = {
  * @param calib Calibration parameters
  * @return Calibrated value
  */
-static float apply_linear_calibration(int raw, const linear_calib_t *calib)
-{
+static float apply_linear_calibration(int raw, const linear_calib_t *calib) {
     return calib->m * raw + calib->b;
 }
 
@@ -55,14 +45,12 @@ static float apply_linear_calibration(int raw, const linear_calib_t *calib)
  * @param calib Calibration parameters
  * @return Calibrated value
  */
-static float apply_polynomial_calibration(int raw, const poly_calib_t *calib)
-{
-    float x = (float)raw;
+static float apply_polynomial_calibration(int raw, const poly_calib_t *calib) {
+    float x = (float) raw;
     return calib->a * x * x + calib->b * x + calib->c;
 }
 
-esp_err_t sensor_init(void)
-{
+esp_err_t sensor_init(void) {
     ESP_LOGI(TAG, "Initializing sensor driver...");
 
     // Create mutex for thread safety
@@ -85,15 +73,15 @@ esp_err_t sensor_init(void)
 
     // Configure all sensor channels
     adc_oneshot_chan_cfg_t chan_config = {
-        .atten = ADC_ATTEN_DB_12,  // 0-3.3V range
+        .atten = ADC_ATTEN_DB_12,          // 0-3.3V range
         .bitwidth = ADC_BITWIDTH_DEFAULT,  // 12-bit (0-4095)
     };
 
     for (int i = 0; i < SENSOR_COUNT; i++) {
         ret = adc_oneshot_config_channel(adc_handle, sensors[i].channel, &chan_config);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to configure channel %d: %s",
-                     sensors[i].channel, esp_err_to_name(ret));
+            ESP_LOGE(TAG, "Failed to configure channel %d: %s", sensors[i].channel,
+                     esp_err_to_name(ret));
             return ret;
         }
     }
@@ -105,8 +93,7 @@ esp_err_t sensor_init(void)
     return ESP_OK;
 }
 
-esp_err_t sensor_read(sensor_id_t id, sensor_reading_t *reading)
-{
+esp_err_t sensor_read(sensor_id_t id, sensor_reading_t *reading) {
     // Input validation
     if (id >= SENSOR_COUNT || reading == NULL) {
         ESP_LOGE(TAG, "Invalid arguments (id=%d, reading=%p)", id, reading);
@@ -124,8 +111,8 @@ esp_err_t sensor_read(sensor_id_t id, sensor_reading_t *reading)
     esp_err_t ret = adc_oneshot_read(adc_handle, sensors[id].channel, &raw_value);
     if (ret != ESP_OK) {
         xSemaphoreGive(sensor_mutex);
-        ESP_LOGE(TAG, "Failed to read ADC channel %d: %s",
-                 sensors[id].channel, esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to read ADC channel %d: %s", sensors[id].channel,
+                 esp_err_to_name(ret));
         return ret;
     }
 
@@ -146,12 +133,12 @@ esp_err_t sensor_read(sensor_id_t id, sensor_reading_t *reading)
         case CALIB_NONE:
         default:
             // No calibration - just use raw value
-            calibrated_value = (float)raw_value;
+            calibrated_value = (float) raw_value;
             break;
     }
 
     // Get timestamp in milliseconds since boot
-    uint32_t timestamp = (uint32_t)(esp_timer_get_time() / 1000);
+    uint32_t timestamp = (uint32_t) (esp_timer_get_time() / 1000);
 
     // Populate reading structure
     reading->id = id;
@@ -160,14 +147,13 @@ esp_err_t sensor_read(sensor_id_t id, sensor_reading_t *reading)
     reading->unit = sensors[id].calib.unit;
     reading->timestamp = timestamp;
 
-    ESP_LOGD(TAG, "Sensor %d read: raw=%d, calib=%.2f %s, time=%lu ms",
-             id, raw_value, calibrated_value, reading->unit, timestamp);
+    ESP_LOGD(TAG, "Sensor %d read: raw=%d, calib=%.2f %s, time=%lu ms", id, raw_value,
+             calibrated_value, reading->unit, timestamp);
 
     return ESP_OK;
 }
 
-esp_err_t sensor_set_calibration(sensor_id_t id, const calibration_t *calib)
-{
+esp_err_t sensor_set_calibration(sensor_id_t id, const calibration_t *calib) {
     // Input validation
     if (id >= SENSOR_COUNT || calib == NULL) {
         ESP_LOGE(TAG, "Invalid arguments (id=%d, calib=%p)", id, calib);
@@ -186,14 +172,12 @@ esp_err_t sensor_set_calibration(sensor_id_t id, const calibration_t *calib)
     // Release mutex
     xSemaphoreGive(sensor_mutex);
 
-    ESP_LOGI(TAG, "Sensor %d calibration updated: type=%d, unit=%s",
-             id, calib->type, calib->unit);
+    ESP_LOGI(TAG, "Sensor %d calibration updated: type=%d, unit=%s", id, calib->type, calib->unit);
 
     return ESP_OK;
 }
 
-const sensor_info_t* sensor_get_info(sensor_id_t id)
-{
+const sensor_info_t *sensor_get_info(sensor_id_t id) {
     // Input validation
     if (id >= SENSOR_COUNT) {
         ESP_LOGE(TAG, "Invalid sensor ID: %d", id);

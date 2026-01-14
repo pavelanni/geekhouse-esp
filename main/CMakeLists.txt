@@ -6,5 +6,6 @@ idf_component_register(
         "sensor_task.c"
         "display_task.c"
         "led_task.c"
+        "stats_task.c"
     INCLUDE_DIRS "."
 )

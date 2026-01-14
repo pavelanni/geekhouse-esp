@@ -1,34 +1,23 @@
 #include "actuators.h"
+
 #include "driver/gpio.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "esp_log.h"
 
 static const char *TAG = "ACTUATORS";
 
 // Static LED info array
 // This stores GPIO mapping and metadata for each LED
 static led_info_t leds[LED_COUNT] = {
-    [LED_YELLOW_ROOF] = {
-        .gpio = 2,
-        .state = false,
-        .color = "yellow",
-        .location = "roof"
-    },
-    [LED_WHITE_GARDEN] = {
-        .gpio = 3,
-        .state = false,
-        .color = "white",
-        .location = "garden"
-    }
-};
+    [LED_YELLOW_ROOF] = {.gpio = 2, .state = false, .color = "yellow", .location = "roof"},
+    [LED_WHITE_GARDEN] = {.gpio = 3, .state = false, .color = "white", .location = "garden"}};
 
 // Mutex for thread-safe state access
 // This protects the leds[] array from concurrent modification
 static SemaphoreHandle_t led_mutex = NULL;
 
-esp_err_t led_init(void)
-{
+esp_err_t led_init(void) {
     ESP_LOGI(TAG, "Initializing LED driver...");
 
     // Create mutex for thread safety
@@ -39,14 +28,12 @@ esp_err_t led_init(void)
     }
 
     // Configure all LED GPIOs as outputs
-    gpio_config_t led_conf = {
-        .pin_bit_mask = (1ULL << leds[LED_YELLOW_ROOF].gpio) |
-                        (1ULL << leds[LED_WHITE_GARDEN].gpio),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
+    gpio_config_t led_conf = {.pin_bit_mask = (1ULL << leds[LED_YELLOW_ROOF].gpio) |
+                                              (1ULL << leds[LED_WHITE_GARDEN].gpio),
+                              .mode = GPIO_MODE_OUTPUT,
+                              .pull_up_en = GPIO_PULLUP_DISABLE,
+                              .pull_down_en = GPIO_PULLDOWN_DISABLE,
+                              .intr_type = GPIO_INTR_DISABLE};
 
     esp_err_t ret = gpio_config(&led_conf);
     if (ret != ESP_OK) {
@@ -67,8 +54,7 @@ esp_err_t led_init(void)
     return ESP_OK;
 }
 
-esp_err_t led_on(led_id_t id)
-{
+esp_err_t led_on(led_id_t id) {
     // Input validation
     if (id >= LED_COUNT) {
         ESP_LOGE(TAG, "Invalid LED ID: %d", id);
@@ -92,8 +78,7 @@ esp_err_t led_on(led_id_t id)
     return ESP_OK;
 }
 
-esp_err_t led_off(led_id_t id)
-{
+esp_err_t led_off(led_id_t id) {
     // Input validation
     if (id >= LED_COUNT) {
         ESP_LOGE(TAG, "Invalid LED ID: %d", id);
@@ -117,8 +102,7 @@ esp_err_t led_off(led_id_t id)
     return ESP_OK;
 }
 
-esp_err_t led_toggle(led_id_t id)
-{
+esp_err_t led_toggle(led_id_t id) {
     // Input validation
     if (id >= LED_COUNT) {
         ESP_LOGE(TAG, "Invalid LED ID: %d", id);
@@ -138,13 +122,11 @@ esp_err_t led_toggle(led_id_t id)
     // Release mutex
     xSemaphoreGive(led_mutex);
 
-    ESP_LOGD(TAG, "LED %d (%s) toggled to %s", id, leds[id].color,
-             leds[id].state ? "ON" : "OFF");
+    ESP_LOGD(TAG, "LED %d (%s) toggled to %s", id, leds[id].color, leds[id].state ? "ON" : "OFF");
     return ESP_OK;
 }
 
-esp_err_t led_get_state(led_id_t id, bool *state)
-{
+esp_err_t led_get_state(led_id_t id, bool *state) {
     // Input validation
     if (id >= LED_COUNT || state == NULL) {
         ESP_LOGE(TAG, "Invalid arguments (id=%d, state=%p)", id, state);
@@ -166,8 +148,7 @@ esp_err_t led_get_state(led_id_t id, bool *state)
     return ESP_OK;
 }
 
-const led_info_t* led_get_info(led_id_t id)
-{
+const led_info_t *led_get_info(led_id_t id) {
     // Input validation
     if (id >= LED_COUNT) {
         ESP_LOGE(TAG, "Invalid LED ID: %d", id);
