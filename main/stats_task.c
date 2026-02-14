@@ -18,11 +18,11 @@ static const char *TAG = "STATS_TASK";
 // External task handles (defined in main.c)
 extern TaskHandle_t sensor_task_handle;
 extern TaskHandle_t display_task_handle;
-extern TaskHandle_t led_task_handle;
 extern TaskHandle_t stats_task_handle;
+extern TaskHandle_t reporter_task_handle;
 
 // Forward declaration of helper function
-static void check_task_stack(TaskHandle_t handle, const char *name, size_t allocated);
+static void check_task_stack(TaskHandle_t handle, const char *name);
 
 void stats_task(void *pvParameters) {
     (void) pvParameters;
@@ -60,10 +60,11 @@ void stats_task(void *pvParameters) {
 
         // Check individual task stacks with warnings
         ESP_LOGI(TAG, "Stack Analysis:");
-        check_task_stack(sensor_task_handle, "sensor", 2048);
-        check_task_stack(display_task_handle, "display", 2048);
-        check_task_stack(led_task_handle, "led", 1536);
-        check_task_stack(stats_task_handle, "stats", 2048);
+        check_task_stack(sensor_task_handle, "sensor");
+        check_task_stack(display_task_handle, "display");
+        check_task_stack(stats_task_handle, "stats");
+        check_task_stack(reporter_task_handle, "reporter");
+
         ESP_LOGI(TAG, "");
 
         // Get CPU usage statistics
@@ -91,7 +92,7 @@ void stats_task(void *pvParameters) {
 }
 
 // Helper function to check and report stack usage
-static void check_task_stack(TaskHandle_t handle, const char *name, size_t allocated) {
+static void check_task_stack(TaskHandle_t handle, const char *name) {
     if (handle == NULL) {
         ESP_LOGW(TAG, "  %s: handle is NULL", name);
         return;
@@ -100,16 +101,10 @@ static void check_task_stack(TaskHandle_t handle, const char *name, size_t alloc
     // Get high water mark (minimum free stack in bytes)
     UBaseType_t free_stack = uxTaskGetStackHighWaterMark(handle);
 
-    // Calculate used stack
-    size_t used_stack = allocated - free_stack;
-    float usage_percent = (used_stack * 100.0f) / allocated;
-
     // Log with appropriate level
     if (free_stack < STACK_WARNING_THRESHOLD) {
-        ESP_LOGW(TAG, "  ⚠️  %s: %lu/%lu bytes used (%.1f%%), only %u bytes free!", name, used_stack,
-                 allocated, usage_percent, free_stack);
+        ESP_LOGW(TAG, "  ⚠️  %s: only %u bytes free!", name, free_stack);
     } else {
-        ESP_LOGI(TAG, "  %s: %lu/%lu bytes used (%.1f%%), %u bytes free", name, used_stack,
-                 allocated, usage_percent, free_stack);
+        ESP_LOGI(TAG, "  %s: %u bytes free", name, free_stack);
     }
 }

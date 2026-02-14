@@ -4,7 +4,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
-#include "led_task.h"
+#include "freertos/timers.h"
+#include "reporter_task.h"
+#include "sensor_data_shared.h"
 #include "sensor_task.h"
 #include "sensors.h"
 #include "stats_task.h"
@@ -14,8 +16,48 @@ static const char *TAG = "MAIN";
 // Task handles (non-static so other files can access them via extern)
 TaskHandle_t sensor_task_handle = NULL;
 TaskHandle_t display_task_handle = NULL;
-TaskHandle_t led_task_handle = NULL;
 TaskHandle_t stats_task_handle = NULL;
+TaskHandle_t reporter_task_handle = NULL;
+
+volatile int g_latest_light_reading = 0;
+volatile int g_latest_water_reading = 0;
+
+/**
+ * LED timer callback
+ *
+ * It toggles both LEDs, creating an alternating blink pattern.
+ * The blinking period is either 500ms or 100ms depending on
+ * the raw value of water_sensor.
+ *
+ * IMPORTANT: Timer callbacks must be quick and non-blocking!
+ * - Don't use vTaskDelay()
+ * - Don't block on queues with long timeouts
+ * - Don't do heavy processing
+ *
+ * If you need blocking operations, use a task instead.
+ */
+static void led_timer_callback(TimerHandle_t xTimer) {
+    // Toggle both LEDs
+    // The actuator driver is thread-safe (uses mutex internally)
+    led_toggle(LED_YELLOW_ROOF);
+    led_toggle(LED_WHITE_GARDEN);
+
+    static TickType_t current_period = pdMS_TO_TICKS(500);
+    static TickType_t new_period = pdMS_TO_TICKS(500);
+
+    // Calculate new period
+    if (g_latest_water_reading > 30) {
+        new_period = pdMS_TO_TICKS(100);
+    }
+    if (g_latest_water_reading < 15) {
+        new_period = pdMS_TO_TICKS(500);
+    }
+
+    if (new_period != current_period) {
+        xTimerChangePeriod(xTimer, new_period, 0);
+        current_period = new_period;
+    }
+}
 
 void app_main(void) {
     ESP_LOGI(TAG, "");
@@ -28,6 +70,22 @@ void app_main(void) {
     ESP_ERROR_CHECK(sensor_init());
     ESP_LOGI(TAG, "Drivers initialized successfully");
     ESP_LOGI(TAG, "");
+
+    // Create mutex for shared sensor data
+    ESP_LOGI(TAG, "Creating shared data mutex...");
+    g_shared_data_mutex = xSemaphoreCreateMutex();
+    if (g_shared_data_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create shared data mutex");
+        return;
+    }
+
+    // Create event group for sensor coordination
+    ESP_LOGI(TAG, "Creating sensor event group...");
+    EventGroupHandle_t sensor_events = xEventGroupCreate();
+    if (sensor_events == NULL) {
+        ESP_LOGE(TAG, "Failed to create event group");
+        return;
+    }
 
     // ===== Create Queue =====
     // Queue for passing sensor readings from sensor_task to display_task
@@ -49,12 +107,17 @@ void app_main(void) {
 
     // Sensor task: Reads ADC periodically and pushes to queue
     // Priority: 5 (medium) - important but not time-critical
-    // Stack: 4KB - needs space for sensor driver calls and logging
-    ESP_LOGI(TAG, "  Creating sensor_task (priority: 5, stack: 4KB)...");
+    // Stack: 2KB - needs space for sensor driver calls and logging
+    ESP_LOGI(TAG, "  Creating sensor_task (priority: 5, stack: 2KB)...");
+
+    static sensor_task_params_t sensor_params;
+    sensor_params.queue = sensor_queue;
+    sensor_params.events = sensor_events;
+
     ret = xTaskCreate(sensor_task,         // Task function
                       "sensor",            // Task name (for debugging)
                       2048,                // Stack size in bytes
-                      sensor_queue,        // Parameter (queue handle)
+                      &sensor_params,      // Parameters (queue and event group handles)
                       5,                   // Priority
                       &sensor_task_handle  // Task handle
     );
@@ -63,10 +126,20 @@ void app_main(void) {
         return;
     }
 
+    // Create reporter task
+    ESP_LOGI(TAG, "  Creating reporter_task (priority: 4, stack: 4KB)...");
+    ret = xTaskCreate(reporter_task, "reporter", 4096,
+                      sensor_events,  // Pass event group
+                      4, &reporter_task_handle);
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create reporter task");
+        return;
+    }
+
     // Display task: Receives from queue and prints to console
     // Priority: 4 (lower than sensor) - display is less important than collection
-    // Stack: 3KB - moderate for logging
-    ESP_LOGI(TAG, "  Creating display_task (priority: 4, stack: 3KB)...");
+    // Stack: 2KB - moderate for logging
+    ESP_LOGI(TAG, "  Creating display_task (priority: 4, stack: 2KB)...");
     ret = xTaskCreate(display_task,         // Task function
                       "display",            // Task name (for debugging)
                       2048,                 // Stack size in bytes
@@ -79,23 +152,31 @@ void app_main(void) {
         return;
     }
 
-    // LED task: Blinks LEDs independently
-    // Priority: 3 (low) - just a visual indicator
-    // Stack: 2KB - minimal (no complex operations)
-    ESP_LOGI(TAG, "  Creating led_task (priority: 3, stack: 2KB)...");
-    ret = xTaskCreate(led_task,         // Task function
-                      "led",            // Task name (for debugging)
-                      1536,             // Stack size in bytes
-                      NULL,             // No parameters needed
-                      3,                // Priority
-                      &led_task_handle  // Task handle
+    // Create LED blink timer (instead of led_task)
+    ESP_LOGI(TAG, "  Creating led_timer (period: 500ms)...");
+    TimerHandle_t led_timer = xTimerCreate("led_blink",         // Timer name (for debugging)
+                                           pdMS_TO_TICKS(500),  // Period: 500ms
+                                           pdTRUE,  // Auto-reload: timer repeats automatically
+                                           NULL,    // Timer ID: not used
+                                           led_timer_callback  // Callback function
     );
-    if (ret != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create LED task");
+
+    if (led_timer == NULL) {
+        ESP_LOGE(TAG, "Failed to create LED timer");
         return;
     }
 
-    ESP_LOGI(TAG, "  Creating stats_task (priority: 2, stack: 4KB)...");
+    // Start the timer
+    // Second parameter is block time: 0 means don't wait if timer queue is full
+    if (xTimerStart(led_timer, 0) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to start LED timer");
+        return;
+    }
+
+    // Stats task: Monitors system stats periodically
+    // Priority: 2 (lowest) - non-critical monitoring
+    // Stack: 2KB - needs space for stats gathering and logging
+    ESP_LOGI(TAG, "  Creating stats_task (priority: 2, stack: 2KB)...");
     ret = xTaskCreate(stats_task,         // Task function
                       "stats",            // Task name
                       2048,               // Stack size (needs space for buffers)
@@ -124,5 +205,5 @@ void app_main(void) {
     // From this point on, the three tasks we created will run concurrently:
     // - sensor_task: Reading sensors every 2s
     // - display_task: Printing readings as they arrive
-    // - led_task: Blinking LEDs every 500ms
+    // - led_timer: Blinking LEDs every 500ms or 100ms depending on the water_sensor raw value
 }

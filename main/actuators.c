@@ -41,15 +41,26 @@ esp_err_t led_init(void) {
         return ret;
     }
 
-    // Initialize all LEDs to OFF
+    // Initialize even LEDs to OFF
     for (int i = 0; i < LED_COUNT; i++) {
-        gpio_set_level(leds[i].gpio, 0);
-        leds[i].state = false;
+        if (i % 2 == 0) {
+            gpio_set_level(leds[i].gpio, 0);
+            leds[i].state = false;
+        }
     }
 
-    ESP_LOGI(TAG, "LED driver initialized (GPIO2: %s/%s, GPIO3: %s/%s)",
+    // Initialize odd LEDs to ON
+    for (int i = 1; i < LED_COUNT; i++) {
+        if (i % 2 == 1) {
+            gpio_set_level(leds[i].gpio, 1);
+            leds[i].state = true;
+        }
+    }
+
+    ESP_LOGI(TAG, "LED driver initialized (GPIO2: %s/%s, %s, GPIO3: %s/%s, %s)",
              leds[LED_YELLOW_ROOF].color, leds[LED_YELLOW_ROOF].location,
-             leds[LED_WHITE_GARDEN].color, leds[LED_WHITE_GARDEN].location);
+             leds[LED_YELLOW_ROOF].state ? "ON" : "OFF", leds[LED_WHITE_GARDEN].color,
+             leds[LED_WHITE_GARDEN].location, leds[LED_WHITE_GARDEN].state ? "ON" : "OFF");
 
     return ESP_OK;
 }
