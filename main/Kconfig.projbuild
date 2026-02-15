@@ -1,0 +1,17 @@
+menu "Geekhouse Configuration"
+
+    config GEEKHOUSE_WIFI_SSID
+        string "WiFi SSID"
+        default "myssid"
+        help
+            Default WiFi network name. This is used as the initial value
+            stored in NVS on first boot. Can be changed at runtime.
+
+    config GEEKHOUSE_WIFI_PASSWORD
+        string "WiFi Password"
+        default "mypassword"
+        help
+            Default WiFi password. This is used as the initial value
+            stored in NVS on first boot. Can be changed at runtime.
+
+endmenu

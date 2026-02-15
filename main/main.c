@@ -5,11 +5,14 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
+#include "nvs_flash.h"
 #include "reporter_task.h"
 #include "sensor_data_shared.h"
 #include "sensor_task.h"
 #include "sensors.h"
 #include "stats_task.h"
+#include "wifi_config.h"
+#include "wifi_manager.h"
 
 static const char *TAG = "MAIN";
 
@@ -22,47 +25,51 @@ TaskHandle_t reporter_task_handle = NULL;
 volatile int g_latest_light_reading = 0;
 volatile int g_latest_water_reading = 0;
 
-/**
- * LED timer callback
- *
- * It toggles both LEDs, creating an alternating blink pattern.
- * The blinking period is either 500ms or 100ms depending on
- * the raw value of water_sensor.
- *
- * IMPORTANT: Timer callbacks must be quick and non-blocking!
- * - Don't use vTaskDelay()
- * - Don't block on queues with long timeouts
- * - Don't do heavy processing
- *
- * If you need blocking operations, use a task instead.
- */
-static void led_timer_callback(TimerHandle_t xTimer) {
-    // Toggle both LEDs
-    // The actuator driver is thread-safe (uses mutex internally)
-    led_toggle(LED_YELLOW_ROOF);
-    led_toggle(LED_WHITE_GARDEN);
-
-    static TickType_t current_period = pdMS_TO_TICKS(500);
-    static TickType_t new_period = pdMS_TO_TICKS(500);
-
-    // Calculate new period
-    if (g_latest_water_reading > 30) {
-        new_period = pdMS_TO_TICKS(100);
-    }
-    if (g_latest_water_reading < 15) {
-        new_period = pdMS_TO_TICKS(500);
-    }
-
-    if (new_period != current_period) {
-        xTimerChangePeriod(xTimer, new_period, 0);
-        current_period = new_period;
-    }
-}
+static void led_timer_callback(TimerHandle_t xTimer);
 
 void app_main(void) {
     ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "=== Geekhouse Phase 2: Multi-Task Architecture ===");
+    ESP_LOGI(TAG, "=== Geekhouse FreeRTOS version ===");
     ESP_LOGI(TAG, "");
+
+    // Initialize NVS (must be before wifi_config_init)
+    ESP_LOGI(TAG, "Initializing NVS flash...");
+    esp_err_t ret_nvs = nvs_flash_init();
+    if (ret_nvs == ESP_ERR_NVS_NO_FREE_PAGES || ret_nvs == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS partition was corrupted or wrong version - erase and retry
+        ESP_LOGW(TAG, "NVS corrupted, erasing...");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret_nvs = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret_nvs);
+
+    // Initialize WiFi configuration from NVS
+    ESP_LOGI(TAG, "Initializing WiFi configuration...");
+    ESP_ERROR_CHECK(wifi_config_init());
+
+    // Print current credentials
+    char ssid[WIFI_SSID_MAX_LEN + 1];
+    wifi_config_get_ssid(ssid, sizeof(ssid));
+    ESP_LOGI(TAG, "Configured WiFi SSID: %s", ssid);
+
+    // Initialize WiFi
+    ESP_LOGI(TAG, "Initializing WiFi...");
+    ESP_ERROR_CHECK(wifi_manager_init());
+
+    // Wait for WiFi connection before starting network services
+    ESP_LOGI(TAG, "Waiting for WiFi connection...");
+    EventGroupHandle_t wifi_events = wifi_manager_get_event_group();
+    EventBits_t bits = xEventGroupWaitBits(wifi_events, WIFI_CONNECTED_BIT | WIFI_DISCONNECTED_BIT,
+                                           pdFALSE,              // Don't clear bits
+                                           pdFALSE,              // Wait for ANY bit (OR)
+                                           pdMS_TO_TICKS(30000)  // 30 second timeout
+    );
+
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "WiFi connected!");
+    } else {
+        ESP_LOGW(TAG, "WiFi connection timed out, continuing without network");
+    }
 
     // ===== Initialize Drivers =====
     ESP_LOGI(TAG, "Initializing drivers...");
@@ -206,4 +213,41 @@ void app_main(void) {
     // - sensor_task: Reading sensors every 2s
     // - display_task: Printing readings as they arrive
     // - led_timer: Blinking LEDs every 500ms or 100ms depending on the water_sensor raw value
+}
+
+/**
+ * LED timer callback
+ *
+ * It toggles both LEDs, creating an alternating blink pattern.
+ * The blinking period is either 500ms or 100ms depending on
+ * the raw value of water_sensor.
+ *
+ * IMPORTANT: Timer callbacks must be quick and non-blocking!
+ * - Don't use vTaskDelay()
+ * - Don't block on queues with long timeouts
+ * - Don't do heavy processing
+ *
+ * If you need blocking operations, use a task instead.
+ */
+static void led_timer_callback(TimerHandle_t xTimer) {
+    // Toggle both LEDs
+    // The actuator driver is thread-safe (uses mutex internally)
+    led_toggle(LED_YELLOW_ROOF);
+    led_toggle(LED_WHITE_GARDEN);
+
+    static TickType_t current_period = pdMS_TO_TICKS(500);
+    static TickType_t new_period = pdMS_TO_TICKS(500);
+
+    // Calculate new period
+    if (g_latest_water_reading > 30) {
+        new_period = pdMS_TO_TICKS(100);
+    }
+    if (g_latest_water_reading < 15) {
+        new_period = pdMS_TO_TICKS(500);
+    }
+
+    if (new_period != current_period) {
+        xTimerChangePeriod(xTimer, new_period, 0);
+        current_period = new_period;
+    }
 }

@@ -34,7 +34,6 @@ dependencies.lock
 *.pfx
 credentials.txt
 secrets.h
-wifi_config.h
 
 # ESP-IDF specific
 sdkconfig

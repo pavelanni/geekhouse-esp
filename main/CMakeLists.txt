@@ -8,5 +8,14 @@ idf_component_register(
         "stats_task.c"
         "sensor_data_shared.c"
         "reporter_task.c"
+        "wifi_config.c"
+        "wifi_manager.c"
     INCLUDE_DIRS "."
+    REQUIRES
+        esp_adc
+    PRIV_REQUIRES
+        nvs_flash
+        esp_driver_gpio
+        esp_wifi
+        esp_netif
 )

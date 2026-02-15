@@ -1,8 +1,8 @@
 #ifndef SENSORS_H
 #define SENSORS_H
 
-#include "esp_err.h"
 #include "esp_adc/adc_oneshot.h"
+#include "esp_err.h"
 
 // Sensor types
 typedef enum {
@@ -12,8 +12,8 @@ typedef enum {
 
 // Sensor identifiers
 typedef enum {
-    SENSOR_LIGHT_ROOF = 0,   // GPIO0, ADC1_CH0
-    SENSOR_WATER_ROOF = 1,   // GPIO1, ADC1_CH1
+    SENSOR_LIGHT_ROOF = 0,  // GPIO0, ADC1_CH0
+    SENSOR_WATER_ROOF = 1,  // GPIO1, ADC1_CH1
     SENSOR_COUNT = 2
 } sensor_id_t;
 
@@ -50,10 +50,10 @@ typedef struct {
 // Sensor reading (for queue)
 typedef struct {
     sensor_id_t id;
-    int raw_value;        // 0-4095 (12-bit ADC)
+    int raw_value;  // 0-4095 (12-bit ADC)
     float calibrated_value;
     const char *unit;
-    uint32_t timestamp;   // milliseconds since boot
+    uint32_t timestamp;  // milliseconds since boot
 } sensor_reading_t;
 
 // Sensor metadata
@@ -101,6 +101,6 @@ esp_err_t sensor_set_calibration(sensor_id_t id, const calibration_t *calib);
  * @param id Sensor identifier
  * @return Pointer to sensor info, or NULL if invalid
  */
-const sensor_info_t* sensor_get_info(sensor_id_t id);
+const sensor_info_t *sensor_get_info(sensor_id_t id);
 
-#endif // SENSORS_H
+#endif  // SENSORS_H
