@@ -61,3 +61,6 @@ Thumbs.db
 # Core dumps
 core
 core.*
+
+# Cache
+.cache

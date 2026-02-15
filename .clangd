@@ -13,3 +13,8 @@ CompileFlags:
   Add:
     - -march=rv32imc
     - -Wno-unknown-argument
+Diagnostics:
+  Suppress:
+    - unknown_typename
+    - builtin_definition
+    - redefinition_different_typedef

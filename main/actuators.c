@@ -131,7 +131,7 @@ esp_err_t led_toggle(led_id_t id) {
     }
 
     // Toggle LED state
-    leds[id].state = !leds[id].state;
+    leds[id].state = ((!leds[id].state) != 0);
     gpio_set_level(leds[id].gpio, (int) leds[id].state ? 1 : 0);
 
     // Release mutex

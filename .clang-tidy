@@ -4,6 +4,7 @@ Checks: >
   performance-*,
   readability-*,
   -readability-braces-around-statements,
+  -readability-magic-numbers,
   cppcoreguidelines-init-variables,
   google-readability-todo
 

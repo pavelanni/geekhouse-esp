@@ -9,7 +9,6 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
-#include "sensor_data_shared.h"
 #include "sensors.h"
 
 static const char *TAG = "HTTP_SRV";
@@ -118,14 +117,14 @@ static esp_err_t get_leds_handler(httpd_req_t *req) {
 
     for (int i = 0; i < LED_COUNT; i++) {
         const led_info_t *info = led_get_info(i);
-        bool state;
+        bool state = false;
         led_get_state(i, &state);
 
         cJSON *led = cJSON_CreateObject();
         cJSON_AddNumberToObject(led, "id", i);
         cJSON_AddStringToObject(led, "color", info->color);
         cJSON_AddStringToObject(led, "location", info->location);
-        cJSON_AddBoolToObject(led, "state", state);
+        cJSON_AddBoolToObject(led, "state", (cJSON_bool) state);
 
         cJSON_AddItemToArray(leds, led);
     }
