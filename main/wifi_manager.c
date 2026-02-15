@@ -42,7 +42,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
                 // Signal disconnected
                 xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-                xEventGroupSetBits(s_wifi_event_group, WIFI_DISCONNECTED_BIT);
 
                 if (s_retry_count < WIFI_MAX_RETRIES) {
                     s_retry_count++;
@@ -51,6 +50,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
                     esp_wifi_connect();
                 } else {
                     ESP_LOGE(TAG, "Max retries reached, giving up");
+                    xEventGroupSetBits(s_wifi_event_group, WIFI_DISCONNECTED_BIT);
                 }
                 break;
             }
@@ -74,7 +74,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 }
 
 esp_err_t wifi_manager_init(void) {
-    esp_err_t ret;
+    esp_err_t ret = ESP_OK;
 
     // Create event group
     s_wifi_event_group = xEventGroupCreate();

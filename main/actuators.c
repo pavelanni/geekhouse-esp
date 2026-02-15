@@ -4,8 +4,12 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "sensor_data_shared.h"
 
 static const char *TAG = "ACTUATORS";
+
+#define LOW_WATER_SENSOR  15
+#define HIGH_WATER_SENSOR 30
 
 // Static LED info array
 // This stores GPIO mapping and metadata for each LED
@@ -128,7 +132,7 @@ esp_err_t led_toggle(led_id_t id) {
 
     // Toggle LED state
     leds[id].state = !leds[id].state;
-    gpio_set_level(leds[id].gpio, leds[id].state ? 1 : 0);
+    gpio_set_level(leds[id].gpio, (int) leds[id].state ? 1 : 0);
 
     // Release mutex
     xSemaphoreGive(led_mutex);
@@ -169,4 +173,66 @@ const led_info_t *led_get_info(led_id_t id) {
     // Return pointer to static info
     // No mutex needed - info is read-only after init
     return &leds[id];
+}
+
+/**
+ * LED timer callback
+ *
+ * It toggles both LEDs, creating an alternating blink pattern.
+ * The blinking period is either 500ms or 100ms depending on
+ * the raw value of water_sensor.
+ *
+ * IMPORTANT: Timer callbacks must be quick and non-blocking!
+ * - Don't use vTaskDelay()
+ * - Don't block on queues with long timeouts
+ * - Don't do heavy processing
+ *
+ * If you need blocking operations, use a task instead.
+ */
+static void led_timer_callback(TimerHandle_t xTimer) {
+    // Toggle both LEDs
+    // The actuator driver is thread-safe (uses mutex internally)
+    led_toggle(LED_YELLOW_ROOF);
+    led_toggle(LED_WHITE_GARDEN);
+
+    static TickType_t current_period = pdMS_TO_TICKS(500);
+    static TickType_t new_period = pdMS_TO_TICKS(500);
+
+    // Calculate new period
+    // Allow some hysteresis (LOW_WATER - HIGH_WATER) to avoid switching too often
+    if (g_shared_sensor_data.water_raw > HIGH_WATER_SENSOR) {
+        new_period = pdMS_TO_TICKS(100);
+    }
+    if (g_shared_sensor_data.water_raw < LOW_WATER_SENSOR) {
+        new_period = pdMS_TO_TICKS(500);
+    }
+
+    if (new_period != current_period) {
+        xTimerChangePeriod(xTimer, new_period, 0);
+        current_period = new_period;
+    }
+}
+
+esp_err_t led_blink_start(void) {
+    // Create LED blink timer (instead of led_task)
+    ESP_LOGI(TAG, "Creating led_timer (period: 500ms)...");
+    TimerHandle_t led_timer = xTimerCreate("led_blink",         // Timer name (for debugging)
+                                           pdMS_TO_TICKS(500),  // Period: 500ms
+                                           pdTRUE,  // Auto-reload: timer repeats automatically
+                                           NULL,    // Timer ID: not used
+                                           led_timer_callback  // Callback function
+    );
+
+    if (led_timer == NULL) {
+        ESP_LOGE(TAG, "Failed to create LED timer");
+        return ESP_FAIL;
+    }
+    // Start the timer
+    // Second parameter is block time: we give 100 ms for other higher priority tasks to start
+    if (xTimerStart(led_timer, pdMS_TO_TICKS(100)) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to start LED timer");
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
 }

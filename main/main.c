@@ -1,10 +1,13 @@
 #include "actuators.h"
 #include "display_task.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/projdefs.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
+#include "network_task.h"
 #include "nvs_flash.h"
 #include "reporter_task.h"
 #include "sensor_data_shared.h"
@@ -16,16 +19,23 @@
 
 static const char *TAG = "MAIN";
 
+#define SENSOR_TASK_STACK      2048
+#define SENSOR_TASK_PRIORITY   5
+#define REPORTER_TASK_STACK    2048
+#define REPORTER_TASK_PRIORITY 4
+#define DISPLAY_TASK_STACK     2048
+#define DISPLAY_TASK_PRIORITY  4
+#define STATS_TASK_STACK       2048
+#define STATS_TASK_PRIORITY    2
+#define NETWORK_TASK_STACK     4096
+#define NETWORK_TASK_PRIORITY  2
+
 // Task handles (non-static so other files can access them via extern)
 TaskHandle_t sensor_task_handle = NULL;
 TaskHandle_t display_task_handle = NULL;
 TaskHandle_t stats_task_handle = NULL;
 TaskHandle_t reporter_task_handle = NULL;
-
-volatile int g_latest_light_reading = 0;
-volatile int g_latest_water_reading = 0;
-
-static void led_timer_callback(TimerHandle_t xTimer);
+TaskHandle_t network_task_handle = NULL;
 
 void app_main(void) {
     ESP_LOGI(TAG, "");
@@ -51,25 +61,6 @@ void app_main(void) {
     char ssid[WIFI_SSID_MAX_LEN + 1];
     wifi_config_get_ssid(ssid, sizeof(ssid));
     ESP_LOGI(TAG, "Configured WiFi SSID: %s", ssid);
-
-    // Initialize WiFi
-    ESP_LOGI(TAG, "Initializing WiFi...");
-    ESP_ERROR_CHECK(wifi_manager_init());
-
-    // Wait for WiFi connection before starting network services
-    ESP_LOGI(TAG, "Waiting for WiFi connection...");
-    EventGroupHandle_t wifi_events = wifi_manager_get_event_group();
-    EventBits_t bits = xEventGroupWaitBits(wifi_events, WIFI_CONNECTED_BIT | WIFI_DISCONNECTED_BIT,
-                                           pdFALSE,              // Don't clear bits
-                                           pdFALSE,              // Wait for ANY bit (OR)
-                                           pdMS_TO_TICKS(30000)  // 30 second timeout
-    );
-
-    if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "WiFi connected!");
-    } else {
-        ESP_LOGW(TAG, "WiFi connection timed out, continuing without network");
-    }
 
     // ===== Initialize Drivers =====
     ESP_LOGI(TAG, "Initializing drivers...");
@@ -110,7 +101,7 @@ void app_main(void) {
     // ===== Create Tasks =====
     ESP_LOGI(TAG, "Creating FreeRTOS tasks...");
 
-    BaseType_t ret;
+    BaseType_t ret = pdPASS;
 
     // Sensor task: Reads ADC periodically and pushes to queue
     // Priority: 5 (medium) - important but not time-critical
@@ -121,12 +112,12 @@ void app_main(void) {
     sensor_params.queue = sensor_queue;
     sensor_params.events = sensor_events;
 
-    ret = xTaskCreate(sensor_task,         // Task function
-                      "sensor",            // Task name (for debugging)
-                      2048,                // Stack size in bytes
-                      &sensor_params,      // Parameters (queue and event group handles)
-                      5,                   // Priority
-                      &sensor_task_handle  // Task handle
+    ret = xTaskCreate(sensor_task,           // Task function
+                      "sensor",              // Task name (for debugging)
+                      SENSOR_TASK_STACK,     // Stack size in bytes
+                      &sensor_params,        // Parameters (queue and event group handles)
+                      SENSOR_TASK_PRIORITY,  // Priority
+                      &sensor_task_handle    // Task handle
     );
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create sensor task");
@@ -134,10 +125,10 @@ void app_main(void) {
     }
 
     // Create reporter task
-    ESP_LOGI(TAG, "  Creating reporter_task (priority: 4, stack: 4KB)...");
-    ret = xTaskCreate(reporter_task, "reporter", 4096,
+    ESP_LOGI(TAG, "  Creating reporter_task (priority: 4, stack: 2KB)...");
+    ret = xTaskCreate(reporter_task, "reporter", REPORTER_TASK_STACK,
                       sensor_events,  // Pass event group
-                      4, &reporter_task_handle);
+                      REPORTER_TASK_PRIORITY, &reporter_task_handle);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create reporter task");
         return;
@@ -147,53 +138,48 @@ void app_main(void) {
     // Priority: 4 (lower than sensor) - display is less important than collection
     // Stack: 2KB - moderate for logging
     ESP_LOGI(TAG, "  Creating display_task (priority: 4, stack: 2KB)...");
-    ret = xTaskCreate(display_task,         // Task function
-                      "display",            // Task name (for debugging)
-                      2048,                 // Stack size in bytes
-                      sensor_queue,         // Parameter (same queue)
-                      4,                    // Priority
-                      &display_task_handle  // Task handle
+    ret = xTaskCreate(display_task,           // Task function
+                      "display",              // Task name (for debugging)
+                      DISPLAY_TASK_STACK,     // Stack size in bytes
+                      sensor_queue,           // Parameter (same queue)
+                      DISPLAY_TASK_PRIORITY,  // Priority
+                      &display_task_handle    // Task handle
     );
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create display task");
         return;
     }
 
-    // Create LED blink timer (instead of led_task)
-    ESP_LOGI(TAG, "  Creating led_timer (period: 500ms)...");
-    TimerHandle_t led_timer = xTimerCreate("led_blink",         // Timer name (for debugging)
-                                           pdMS_TO_TICKS(500),  // Period: 500ms
-                                           pdTRUE,  // Auto-reload: timer repeats automatically
-                                           NULL,    // Timer ID: not used
-                                           led_timer_callback  // Callback function
-    );
-
-    if (led_timer == NULL) {
-        ESP_LOGE(TAG, "Failed to create LED timer");
-        return;
-    }
-
-    // Start the timer
-    // Second parameter is block time: 0 means don't wait if timer queue is full
-    if (xTimerStart(led_timer, 0) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to start LED timer");
-        return;
+    esp_err_t ret_led = led_blink_start();
+    if (ret_led != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start LED blinking task");
     }
 
     // Stats task: Monitors system stats periodically
     // Priority: 2 (lowest) - non-critical monitoring
     // Stack: 2KB - needs space for stats gathering and logging
     ESP_LOGI(TAG, "  Creating stats_task (priority: 2, stack: 2KB)...");
-    ret = xTaskCreate(stats_task,         // Task function
-                      "stats",            // Task name
-                      2048,               // Stack size (needs space for buffers)
-                      NULL,               // No parameters
-                      2,                  // Priority (lower than all functional tasks)
-                      &stats_task_handle  // Task handle
+    ret = xTaskCreate(stats_task,           // Task function
+                      "stats",              // Task name
+                      STATS_TASK_STACK,     // Stack size (needs space for buffers)
+                      NULL,                 // No parameters
+                      STATS_TASK_PRIORITY,  // Priority (lower than all functional tasks)
+                      &stats_task_handle    // Task handle
     );
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create stats task");
         return;
+    }
+    // Initialize WiFi
+    ESP_LOGI(TAG, "Initializing WiFi...");
+    ESP_ERROR_CHECK(wifi_manager_init());
+
+    // Network task: wait for WiFi to be ready and start HTTP server
+    ESP_LOGI(TAG, "Starting network task...");
+    ret = xTaskCreate(network_task, "network", NETWORK_TASK_STACK, NULL, NETWORK_TASK_PRIORITY,
+                      &network_task_handle);
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to start HTTP server");
     }
 
     ESP_LOGI(TAG, "All tasks created successfully");
@@ -209,45 +195,4 @@ void app_main(void) {
     // The app_main task will be automatically deleted by the IDLE task,
     // and its stack memory will be reclaimed.
     //
-    // From this point on, the three tasks we created will run concurrently:
-    // - sensor_task: Reading sensors every 2s
-    // - display_task: Printing readings as they arrive
-    // - led_timer: Blinking LEDs every 500ms or 100ms depending on the water_sensor raw value
-}
-
-/**
- * LED timer callback
- *
- * It toggles both LEDs, creating an alternating blink pattern.
- * The blinking period is either 500ms or 100ms depending on
- * the raw value of water_sensor.
- *
- * IMPORTANT: Timer callbacks must be quick and non-blocking!
- * - Don't use vTaskDelay()
- * - Don't block on queues with long timeouts
- * - Don't do heavy processing
- *
- * If you need blocking operations, use a task instead.
- */
-static void led_timer_callback(TimerHandle_t xTimer) {
-    // Toggle both LEDs
-    // The actuator driver is thread-safe (uses mutex internally)
-    led_toggle(LED_YELLOW_ROOF);
-    led_toggle(LED_WHITE_GARDEN);
-
-    static TickType_t current_period = pdMS_TO_TICKS(500);
-    static TickType_t new_period = pdMS_TO_TICKS(500);
-
-    // Calculate new period
-    if (g_latest_water_reading > 30) {
-        new_period = pdMS_TO_TICKS(100);
-    }
-    if (g_latest_water_reading < 15) {
-        new_period = pdMS_TO_TICKS(500);
-    }
-
-    if (new_period != current_period) {
-        xTimerChangePeriod(xTimer, new_period, 0);
-        current_period = new_period;
-    }
 }

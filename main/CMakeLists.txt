@@ -10,6 +10,8 @@ idf_component_register(
         "reporter_task.c"
         "wifi_config.c"
         "wifi_manager.c"
+        "http_server.c"
+        "network_task.c"
     INCLUDE_DIRS "."
     REQUIRES
         esp_adc
@@ -18,4 +20,5 @@ idf_component_register(
         esp_driver_gpio
         esp_wifi
         esp_netif
+        esp_http_server
 )

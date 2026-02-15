@@ -2,12 +2,13 @@
 #define ACTUATORS_H
 
 #include <stdbool.h>
+
 #include "esp_err.h"
 
 // LED identifiers
 typedef enum {
-    LED_YELLOW_ROOF = 0,  // GPIO2
-    LED_WHITE_GARDEN = 1, // GPIO3
+    LED_YELLOW_ROOF = 0,   // GPIO2
+    LED_WHITE_GARDEN = 1,  // GPIO3
     LED_COUNT = 2
 } led_id_t;
 
@@ -68,6 +69,7 @@ esp_err_t led_get_state(led_id_t id, bool *state);
  * @param id LED identifier
  * @return Pointer to LED info struct, or NULL if invalid
  */
-const led_info_t* led_get_info(led_id_t id);
+const led_info_t *led_get_info(led_id_t id);
 
-#endif // ACTUATORS_H
+esp_err_t led_blink_start(void);
+#endif  // ACTUATORS_H

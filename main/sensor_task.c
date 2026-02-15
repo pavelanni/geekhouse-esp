@@ -10,9 +10,6 @@
 
 static const char *TAG = "SENSOR_TASK";
 
-extern volatile int g_latest_light_reading;
-extern volatile int g_latest_water_reading;
-
 void sensor_task(void *pvParameters) {
     sensor_task_params_t *params = (sensor_task_params_t *) pvParameters;
     QueueHandle_t queue = params->queue;
@@ -28,9 +25,6 @@ void sensor_task(void *pvParameters) {
     while (1) {
         // Read light sensor
         if (sensor_read(SENSOR_LIGHT_ROOF, &reading) == ESP_OK) {
-            // Save the raw value in the global variable
-            g_latest_light_reading = reading.raw_value;
-
             // Try to send to queue with 100ms timeout
             // If queue is full, this will block for up to 100ms
             if (xQueueSend(queue, &reading, pdMS_TO_TICKS(100)) != pdTRUE) {
@@ -53,9 +47,6 @@ void sensor_task(void *pvParameters) {
 
         // Read water sensor
         if (sensor_read(SENSOR_WATER_ROOF, &reading) == ESP_OK) {
-            // Save the raw value in the global variable
-            g_latest_water_reading = reading.raw_value;
-
             // Try to send to queue with 100ms timeout
             if (xQueueSend(queue, &reading, pdMS_TO_TICKS(100)) != pdTRUE) {
                 // Queue is full - log warning and drop reading

@@ -11,3 +11,11 @@ Checks: >
 CheckOptions:
   - key:             bugprone-argument-comment.StrictMode
     value:           '1'
+  - key: readability-function-cognitive-complexity.Threshold
+    value: '1000'
+  - key: readability-function-size.StatementThreshold
+    value: '2000'
+  - key: readability-identifier-length.MinimumVariableNameLength
+    value: '2'
+  - key: readability-identifier-length.MinimumParameterNameLength
+    value: '2'
