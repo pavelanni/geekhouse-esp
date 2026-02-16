@@ -46,6 +46,33 @@ static esp_err_t send_error_response(httpd_req_t *req, int status, const char *m
     return send_json_response(req, json);
 }
 
+// ---- GET /api ----
+
+static esp_err_t get_api_root_handler(httpd_req_t *req) {
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "name", "Geekhouse API");
+    cJSON_AddStringToObject(root, "version", "1.0.0");
+    cJSON_AddStringToObject(root, "description", "ESP32-C3 sensor and actuator control");
+
+    cJSON *links = cJSON_AddObjectToObject(root, "_links");
+
+    cJSON *self = cJSON_AddObjectToObject(links, "self");
+    cJSON_AddStringToObject(self, "href", "/api");
+
+    cJSON *sensors = cJSON_AddObjectToObject(links, "sensors");
+    cJSON_AddStringToObject(sensors, "href", "/api/sensors");
+    cJSON_AddStringToObject(sensors, "title", "All sensor readings");
+
+    cJSON *leds = cJSON_AddObjectToObject(links, "leds");
+    cJSON_AddStringToObject(leds, "href", "/api/leds");
+    cJSON_AddStringToObject(leds, "title", "All LED states and control");
+
+    cJSON *system = cJSON_AddObjectToObject(links, "system");
+    cJSON_AddStringToObject(system, "href", "/api/system");
+    cJSON_AddStringToObject(system, "title", "System information");
+
+    return send_json_response(req, root);
+}
 // ---- GET /api/sensors ----
 
 static esp_err_t get_sensors_handler(httpd_req_t *req) {
@@ -71,9 +98,23 @@ static esp_err_t get_sensors_handler(httpd_req_t *req) {
         } else {
             cJSON_AddStringToObject(sensor, "error", "read failed");
         }
+        // Add _links to each sensor
+        cJSON *links = cJSON_AddObjectToObject(sensor, "_links");
+        char href[32];
+        snprintf(href, sizeof(href), "/api/sensors/%d", i);
+        cJSON *self_link = cJSON_AddObjectToObject(links, "self");
+        cJSON_AddStringToObject(self_link, "href", href);
 
         cJSON_AddItemToArray(sensors, sensor);
     }
+
+    // Add _links to collection
+    cJSON *links = cJSON_AddObjectToObject(root, "_links");
+    cJSON *self = cJSON_AddObjectToObject(links, "self");
+    cJSON_AddStringToObject(self, "href", "/api/sensors");
+    cJSON *up = cJSON_AddObjectToObject(links, "up");
+    cJSON_AddStringToObject(up, "href", "/api");
+    cJSON_AddStringToObject(up, "title", "API root");
 
     return send_json_response(req, root);
 }
@@ -106,6 +147,16 @@ static esp_err_t get_sensor_by_id_handler(httpd_req_t *req) {
         cJSON_AddNumberToObject(root, "timestamp", reading.timestamp);
     }
 
+    // Add _links
+    cJSON *links = cJSON_AddObjectToObject(root, "_links");
+    char href[32];
+    snprintf(href, sizeof(href), "/api/sensors/%d", id);
+    cJSON *self = cJSON_AddObjectToObject(links, "self");
+    cJSON_AddStringToObject(self, "href", href);
+    cJSON *collection = cJSON_AddObjectToObject(links, "collection");
+    cJSON_AddStringToObject(collection, "href", "/api/sensors");
+    cJSON_AddStringToObject(collection, "title", "All sensors");
+
     return send_json_response(req, root);
 }
 
@@ -126,8 +177,30 @@ static esp_err_t get_leds_handler(httpd_req_t *req) {
         cJSON_AddStringToObject(led, "location", info->location);
         cJSON_AddBoolToObject(led, "state", (cJSON_bool) state);
 
+        // Add _links with action hints
+        cJSON *links = cJSON_AddObjectToObject(led, "_links");
+        char href[32];
+        snprintf(href, sizeof(href), "/api/leds/%d", i);
+
+        cJSON *self_link = cJSON_AddObjectToObject(links, "self");
+        cJSON_AddStringToObject(self_link, "href", href);
+
+        cJSON *control = cJSON_AddObjectToObject(links, "control");
+        cJSON_AddStringToObject(control, "href", href);
+        cJSON_AddStringToObject(control, "method", "POST");
+        cJSON_AddStringToObject(control, "title", "Control LED");
+        cJSON_AddStringToObject(control, "accepts", "{\"action\": \"on|off|toggle\"}");
+
         cJSON_AddItemToArray(leds, led);
     }
+
+    // Collection links
+    cJSON *links = cJSON_AddObjectToObject(root, "_links");
+    cJSON *self = cJSON_AddObjectToObject(links, "self");
+    cJSON_AddStringToObject(self, "href", "/api/leds");
+    cJSON *up = cJSON_AddObjectToObject(links, "up");
+    cJSON_AddStringToObject(up, "href", "/api");
+    cJSON_AddStringToObject(up, "title", "API root");
 
     return send_json_response(req, root);
 }
@@ -193,6 +266,15 @@ static esp_err_t post_led_handler(httpd_req_t *req) {
     cJSON_AddStringToObject(root, "location", info->location);
     cJSON_AddBoolToObject(root, "state", (cJSON_bool) state);
 
+    // Add _links to response
+    cJSON *links = cJSON_AddObjectToObject(root, "_links");
+    char href[32];
+    snprintf(href, sizeof(href), "/api/leds/%d", id);
+    cJSON *self = cJSON_AddObjectToObject(links, "self");
+    cJSON_AddStringToObject(self, "href", href);
+    cJSON *collection = cJSON_AddObjectToObject(links, "collection");
+    cJSON_AddStringToObject(collection, "href", "/api/leds");
+
     return send_json_response(req, root);
 }
 
@@ -219,6 +301,14 @@ static esp_err_t get_system_handler(httpd_req_t *req) {
         cJSON_AddNumberToObject(wifi, "channel", ap_info.primary);
     }
 
+    // Add _links with action hints
+    cJSON *links = cJSON_AddObjectToObject(root, "_links");
+    cJSON *self = cJSON_AddObjectToObject(links, "self");
+    cJSON_AddStringToObject(self, "href", "/api/system");
+    cJSON *up = cJSON_AddObjectToObject(links, "up");
+    cJSON_AddStringToObject(up, "href", "/api");
+    cJSON_AddStringToObject(up, "title", "API root");
+
     return send_json_response(req, root);
 }
 
@@ -237,6 +327,11 @@ esp_err_t http_server_start(void) {
 
     // Register URI handlers
     const httpd_uri_t uris[] = {
+        {
+            .uri = "/api",
+            .method = HTTP_GET,
+            .handler = get_api_root_handler,
+        },
         {
             .uri = "/api/sensors",
             .method = HTTP_GET,
