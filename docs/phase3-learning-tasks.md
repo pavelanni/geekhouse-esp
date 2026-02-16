@@ -1652,7 +1652,225 @@ curl http://192.168.1.42/api/sensors | jq '._links.up'
 
 ---
 
-## Task 5: MQTT Client (Medium-Hard - 45 mins)
+## Task 5: NTP Time Synchronization (Easy - 20 mins)
+
+### Learning Goal
+
+Synchronize the ESP32's system clock with real-world time using NTP (Network Time Protocol). Learn how time works on embedded systems without a battery-backed RTC.
+
+### What to Build
+
+A time sync module that:
+
+- Starts SNTP client after WiFi connects
+- Syncs system clock from `pool.ntp.org`
+- Configures timezone
+- Provides a function to check if time is synced
+- Makes `time()` and `localtime_r()` return real wall-clock time
+
+### Why This Matters
+
+- **Meaningful timestamps**: Sensor readings get real date/time instead of "milliseconds since boot"
+- **Data correlation**: Compare readings across reboots or between devices
+- **Scheduling**: Enable time-of-day actions (lights on at sunset, etc.)
+- **MQTT/logging**: Messages carry proper ISO 8601 timestamps
+- **No RTC**: ESP32-C3 has no battery-backed clock — time resets to 1970 on every reboot
+
+### Time on ESP32 — How It Works
+
+Without NTP, the ESP32 has three time sources:
+
+1. **`esp_timer_get_time()`** — Microseconds since boot. Monotonic, high resolution. Good for measuring intervals, not for knowing *when* something happened.
+
+2. **`time()` / `gettimeofday()`** — Standard C time functions. Return Unix timestamp. Start at epoch (Jan 1, 1970) on boot. After NTP sync, return real wall-clock time.
+
+3. **`xTaskGetTickCount()`** — FreeRTOS ticks since scheduler start. Good for delays, not for wall-clock time.
+
+After SNTP sync, `time()` jumps from 1970 to the current date. The sync happens asynchronously — ESP-IDF sends a UDP packet to an NTP server and updates the system clock when the response arrives. Re-syncs periodically (default: 1 hour).
+
+### Implementation Steps
+
+#### Step 1: Create time_sync.h
+
+```c
+#ifndef TIME_SYNC_H
+#define TIME_SYNC_H
+
+#include "esp_err.h"
+#include <stdbool.h>
+
+/**
+ * Initialize SNTP and start time synchronization
+ *
+ * Configures the SNTP client to sync from pool.ntp.org.
+ * Time sync happens asynchronously after this call returns.
+ *
+ * Must be called after WiFi is connected.
+ *
+ * @return ESP_OK on success
+ */
+esp_err_t time_sync_init(void);
+
+/**
+ * Check if time has been synchronized
+ *
+ * @return true if system clock has been set via NTP
+ */
+bool time_sync_is_synced(void);
+
+#endif // TIME_SYNC_H
+```
+
+#### Step 2: Create time_sync.c
+
+```c
+#include "time_sync.h"
+#include "esp_log.h"
+#include "esp_sntp.h"
+#include <time.h>
+
+static const char *TAG = "TIME_SYNC";
+static bool s_time_synced = false;
+
+/**
+ * Callback when time is synchronized
+ *
+ * Called by the SNTP subsystem after each successful sync.
+ */
+static void time_sync_notification_cb(struct timeval *tv)
+{
+    ESP_LOGI(TAG, "Time synchronized via NTP");
+    s_time_synced = true;
+
+    // Print current time
+    time_t now = tv->tv_sec;
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
+    char strftime_buf[64];
+    strftime(strftime_buf, sizeof(strftime_buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    ESP_LOGI(TAG, "Current time: %s", strftime_buf);
+}
+
+esp_err_t time_sync_init(void)
+{
+    ESP_LOGI(TAG, "Initializing SNTP...");
+
+    // Set timezone (change to your timezone)
+    // Format: POSIX TZ string
+    // Examples:
+    //   "EST5EDT,M3.2.0,M11.1.0"  — US Eastern
+    //   "CET-1CEST,M3.5.0,M10.5.0/3" — Central European
+    //   "PST8PDT,M3.2.0,M11.1.0" — US Pacific
+    //   "UTC0" — UTC (no DST)
+    setenv("TZ", "UTC0", 1);
+    tzset();
+
+    // Configure SNTP
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_set_time_sync_notification_cb(time_sync_notification_cb);
+    esp_sntp_init();
+
+    ESP_LOGI(TAG, "SNTP initialized, waiting for sync...");
+    return ESP_OK;
+}
+
+bool time_sync_is_synced(void)
+{
+    return s_time_synced;
+}
+```
+
+#### Step 3: Start Time Sync in network_task
+
+Add time sync initialization to your `network_task.c`, right after starting the HTTP server:
+
+```c
+#include "time_sync.h"
+
+void network_task(void *pvParameters)
+{
+    // ... wait for WiFi ...
+
+    if (bits & WIFI_CONNECTED_BIT) {
+        // Start HTTP server
+        ESP_ERROR_CHECK(http_server_start());
+
+        // Start NTP time sync
+        time_sync_init();
+    }
+
+    vTaskDelete(NULL);
+}
+```
+
+#### Step 4: Update CMakeLists.txt
+
+Add `time_sync.c` to your SRCS list.
+
+#### Step 5: Use Real Time in Your Code
+
+Once synced, you can use standard C time functions anywhere:
+
+```c
+#include <time.h>
+
+// Get current time as Unix timestamp
+time_t now;
+time(&now);
+
+// Convert to local time struct
+struct tm timeinfo;
+localtime_r(&now, &timeinfo);
+
+// Format as ISO 8601 string
+char buf[32];
+strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &timeinfo);
+// buf = "2026-02-15T14:30:45"
+```
+
+You can also add the current time to your `/api/system` endpoint or sensor readings.
+
+#### Step 6: Build and Test
+
+```bash
+idf.py build
+idf.py flash monitor
+```
+
+### Expected Output
+
+```none
+I (5877) WIFI_MGR: Got IP address: 192.168.10.138
+I (5877) TIME_SYNC: Initializing SNTP...
+I (5877) TIME_SYNC: SNTP initialized, waiting for sync...
+I (6234) TIME_SYNC: Time synchronized via NTP
+I (6234) TIME_SYNC: Current time: 2026-02-15 14:30:45
+```
+
+### Learning Points
+
+1. **No Battery-Backed RTC**: Unlike a PC, the ESP32-C3 loses time on every reboot. NTP sync is essential for real timestamps.
+
+2. **SNTP vs NTP**: SNTP is a simplified version of NTP — single server query, no clock discipline algorithm. Accurate to ~10-100ms, which is more than enough for IoT.
+
+3. **Timezone Handling**: `setenv("TZ", ...)` with POSIX TZ strings. The timezone is applied by `localtime_r()`, not stored on the NTP server. NTP always returns UTC.
+
+4. **Async Sync**: `esp_sntp_init()` returns immediately. The actual sync happens seconds later when the UDP response arrives. Check `time_sync_is_synced()` before relying on wall-clock time.
+
+5. **Periodic Re-sync**: SNTP re-syncs every hour by default (configurable via `CONFIG_LWIP_SNTP_UPDATE_DELAY`). The ESP32's internal oscillator drifts ~10ppm, so periodic re-sync keeps time accurate.
+
+### Extension Ideas
+
+- Add timezone configuration via NVS (like WiFi credentials)
+- Add current time to the `/api/system` REST endpoint
+- Replace milliseconds-since-boot timestamps in sensor readings with ISO 8601
+- Add a time sync status to the stats task output
+- Configure a backup NTP server: `esp_sntp_setservername(1, "time.google.com")`
+
+---
+
+## Task 6: MQTT Client (Medium-Hard - 45 mins)
 
 ### Learning Goal
 
@@ -2247,6 +2465,7 @@ Congratulations on completing Phase 3! You now have a fully network-connected Io
 - NVS configuration storage
 - WiFi with auto-reconnect
 - REST API with JSON and HATEOAS
+- NTP time synchronization with real timestamps
 - MQTT publish/subscribe
 - Remote LED control via HTTP and MQTT
 - Sensor data accessible from anywhere on your network
@@ -2280,7 +2499,8 @@ Congratulations on completing Phase 3! You now have a fully network-connected Io
 2. **Do Task 2** (WiFi) - Required for everything else
 3. **Do Task 3** (HTTP) - Most immediately useful and testable
 4. **Do Task 4** (HATEOAS) - Quick enhancement, good REST practices
-5. **Do Task 5** (MQTT) - Enables real-time monitoring and control
+5. **Do Task 5** (NTP) - Real timestamps for sensor data
+6. **Do Task 6** (MQTT) - Enables real-time monitoring and control
 
 ### Ready for Phase 4?
 

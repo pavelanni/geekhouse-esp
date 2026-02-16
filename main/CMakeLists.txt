@@ -12,6 +12,7 @@ idf_component_register(
         "wifi_manager.c"
         "http_server.c"
         "network_task.c"
+        "time_sync.c"
     INCLUDE_DIRS "."
     REQUIRES
         esp_adc

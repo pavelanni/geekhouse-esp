@@ -1,6 +1,7 @@
 #include "http_server.h"
 
 #include <string.h>
+#include <time.h>
 
 #include "actuators.h"
 #include "cJSON.h"
@@ -282,6 +283,16 @@ static esp_err_t post_led_handler(httpd_req_t *req) {
 
 static esp_err_t get_system_handler(httpd_req_t *req) {
     cJSON *root = cJSON_CreateObject();
+
+    // Current time
+    time_t now = 0;
+    struct tm timeinfo;
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    char strftime_buf[64];
+    strftime(strftime_buf, sizeof(strftime_buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    cJSON_AddStringToObject(root, "current_time", strftime_buf);
 
     // Uptime
     int64_t uptime_ms = esp_timer_get_time() / 1000;

@@ -2,6 +2,7 @@
 
 #include "esp_log.h"
 #include "http_server.h"
+#include "time_sync.h"
 #include "wifi_manager.h"
 
 static const char *TAG = "NETWORK_TASK";
@@ -22,6 +23,8 @@ void network_task(void *pvParameters) {
         // Start HTTP server
         ESP_LOGI(TAG, "Starting HTTP server...");
         ESP_ERROR_CHECK(http_server_start());
+        // Start NTP time sync
+        time_sync_init();
         ESP_LOGI(TAG, "Network task done, deleting self");
 
     } else {
